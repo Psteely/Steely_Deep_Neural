@@ -1,31 +1,54 @@
 import com.sun.source.tree.NewArrayTree;
 
+import java.util.ArrayList;
+
 class NeuralNetwork {
-    int input, hidden, output;
+    int input, hidden, output, noOfHiddenLayers;
     float learningRate;
     boolean softMax;
+    ArrayList<Matrix> weightsMatrices;
+    ArrayList<Matrix> biasMatrices;
 
 
     Matrix weights_IH, weights_HO, bias_H, bias_O;
 
-    NeuralNetwork ( int in_, int hidden_, int out_) {
+    NeuralNetwork ( int input, int hidden, int output,int noOfHiddenLayers) {
         softMax = true;
-        input = in_;
-        hidden = hidden_;
-        output = out_;
+        this.input = input;
+        this.hidden = hidden;
+        this.output = output;
+        this.noOfHiddenLayers = noOfHiddenLayers;
+
+        weightsMatrices = new ArrayList<Matrix>();
+        biasMatrices = new ArrayList<Matrix>();
+
+        weightsMatrices.add(new Matrix(hidden, input));
+        biasMatrices.add(new Matrix(hidden, 1));
+        if (noOfHiddenLayers > 1) {   // Only if there are more than 1 hidden layers do we need to worry
+
+        }
+        weightsMatrices.add(new Matrix(output, hidden));
+        biasMatrices.add(new Matrix(output, 1));
+        // randomise weights
+        for (Matrix weightsMatrix : weightsMatrices) {
+            weightsMatrix.randomise();
+        }
+        for (Matrix biasMatrix : biasMatrices) {
+            biasMatrix.randomise();
+        }
 
 
-        weights_IH = new Matrix(hidden, input);    // weights between in and hidden
-        weights_HO = new Matrix(output, hidden);   // weights between hidden and out
-
-        weights_IH.randomise();
-        weights_HO.randomise();
-
-        bias_H = new Matrix(hidden, 1);  //weights for the bias for the hidden;
-        bias_O = new Matrix(output, 1);  //weights for the bias for the output;
-
-        bias_H.randomise();
-        bias_O.randomise();
+//        weights_IH = new Matrix(hidden, input);    // weights between in and hidden
+//        weights_HO = new Matrix(output, hidden);   // weights between hidden and out
+//
+//        weights_IH.randomise();
+//        weights_HO.randomise();
+//
+//        bias_H = new Matrix(hidden, 1);  //weights for the bias for the hidden;
+//        bias_O = new Matrix(output, 1);  //weights for the bias for the output;
+//
+//        bias_H.randomise();
+//        bias_O.randomise();
     }
 //    NeuralNetwork ( NeuralNetwork nn_) {
 //        softMax = nn_.softMax;
@@ -43,13 +66,14 @@ class NeuralNetwork {
 
     static NeuralNetwork nncopy(NeuralNetwork n_) {
 
-        NeuralNetwork nc = new NeuralNetwork(1,1,1);
+        NeuralNetwork nc = new NeuralNetwork(1,1,1,1);
         nc.softMax = n_.softMax;
         nc.input = n_.input;
         nc.hidden = n_.hidden;
         nc.output = n_.output;
+        nc.noOfHiddenLayers = n_.noOfHiddenLayers;
         nc.learningRate = n_.learningRate;
-
+        //TODO amend the copy logic here
         nc.weights_IH = Matrix.matrixCopy(n_.weights_IH);
         nc.weights_HO = Matrix.matrixCopy(n_.weights_HO);
         nc.bias_H = Matrix.matrixCopy(n_.bias_H);
@@ -65,9 +89,13 @@ class NeuralNetwork {
 
         ////// This is our feed forward
         //calculate hidden weights
-        Matrix hiddenM = new Matrix(calculateWeights(weights_IH,inM));
+
+        Matrix hiddenM = new Matrix(calculateWeights(weightsMatrices.get(0),inM,biasMatrices.get(0)));
+        if (noOfHiddenLayers > 1) {
+            // Feed in the other layers
+        }
         // Take these squished inputs and multiply them by the hidden wights
-        Matrix outMatrix = new Matrix(calculateWeights(weights_HO,hiddenM));
+        Matrix outMatrix = new Matrix(calculateWeights(weightsMatrices.get(noOfHiddenLayers),hiddenM,biasMatrices.get(noOfHiddenLayers)));
         //////
 
         ///// Handle the output
@@ -97,45 +125,46 @@ class NeuralNetwork {
         Matrix matrixTargets  = new Matrix(targets_.length, 1);
         matrixTargets.fromArray(targets_)  ;   // targets as a matrix
 
-        /////// This is our feed forward
+        ////// This is our feed forward
+        Matrix test  = new Matrix(1,1);
+        test = weightsMatrices.get(0);
         //calculate hidden weights
-        Matrix hiddenM = new Matrix(calculateWeights(weights_IH,inM));
+        Matrix hiddenM = new Matrix(calculateWeights(weightsMatrices.get(0),inM,biasMatrices.get(0)));
+        if (noOfHiddenLayers > 1) {
+            // Feed in the other layers
+        }
         // Take these squished inputs and multiply them by the hidden wights
-        Matrix outMatrix = new Matrix(calculateWeights(weights_HO,hiddenM));
-        ///////
+        Matrix outMatrix = new Matrix(calculateWeights(weightsMatrices.get(noOfHiddenLayers),hiddenM,biasMatrices.get(0)));
+        //////
 
         // This gives us our output errors Matrix.
         Matrix output_errors = new Matrix (Matrix.subMatrix(matrixTargets, outMatrix));
 
         // Now we have our output errors we need the gradient descent bit.
-        // sigmoid derivative
-        outMatrix = derivative(outMatrix,output_errors);
+        backPropagation(outMatrix,output_errors,hiddenM,biasMatrices.get(noOfHiddenLayers),weightsMatrices.get(noOfHiddenLayers));
 
-        //update bias
-        bias_O.addMatrix(outMatrix);
-
-        //calculate deltas
-        Matrix weight_HO_deltas = new Matrix(calculateDeltas(outMatrix,hiddenM));
-
-        //Adjust deltas
-        weights_HO.addMatrix(weight_HO_deltas);
         // transpose Hidden to output Weights
-        Matrix weights_HO_T = new Matrix(Matrix.transpose(weights_HO));
+        Matrix weights_HO_T = new Matrix(Matrix.transpose(weightsMatrices.get(noOfHiddenLayers)));
         // get the hidden layers errors.
         Matrix hidden_errors = new Matrix(Matrix.multiply(weights_HO_T, output_errors));
-        // hidden gradient
-        hiddenM = derivative(hiddenM,hidden_errors);
-        // sigmoid derivative
-        // adjust bias
-        bias_H.addMatrix(hiddenM);
 
-        //  input to hidden
-        Matrix weight_IH_deltas = new Matrix(calculateDeltas(hiddenM,inM));
-
-        // adjust weights
-        weights_IH.addMatrix(weight_IH_deltas);
+        // Gradient descent for the input layers
+        backPropagation(hiddenM,hidden_errors,inM,biasMatrices.get(0),weightsMatrices.get(0));
 
 
+    }
+
+    void backPropagation (Matrix ffMatrix, Matrix errors_Matrix,Matrix ffPrevLayer, Matrix bias, Matrix weights) {
+        ffMatrix = derivative(ffMatrix,errors_Matrix);
+
+        //update bias
+        bias.addMatrix(ffMatrix);
+
+        //calculate deltas
+        Matrix weight_HO_deltas = new Matrix(calculateDeltas(ffMatrix,ffPrevLayer));
+
+        //Adjust deltas
+        weights.addMatrix(weight_HO_deltas);
     }
 
     void  mutate(float percentage) {
@@ -159,11 +188,11 @@ class NeuralNetwork {
         softMax = false;
     }
 
-    Matrix  calculateWeights (Matrix weights_, Matrix weightsLayer_) {
+    Matrix  calculateWeights (Matrix weights_, Matrix weightsLayer_, Matrix bias) {
         // all inputs multiplied by weights
         Matrix Tmp = new Matrix(Matrix.multiply(weights_, weightsLayer_));
         // add in the bias weights
-        Tmp.addMatrix(bias_H);
+        Tmp.addMatrix(bias);
         // activation function on all weights (squish them to 0-1)
         Tmp.sigmoid();
         return Tmp;
