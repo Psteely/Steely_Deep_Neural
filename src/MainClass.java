@@ -61,7 +61,9 @@ public class MainClass extends PApplet {
     Table csvReader;
     TableRow csvRow;
 
-
+//    public void settings () {
+//        size(400,400);
+//    }
 
 
     public void setup() {
